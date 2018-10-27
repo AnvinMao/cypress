@@ -11,13 +11,13 @@ import (
 )
 
 type member struct {
-	id        int32
-	name      string
-	yearBirth int32
+	ID        int32  `col:"id"`
+	Name      string `col:"name"`
+	YearBirth int32  `col:"year_birth"`
 }
 
 func TestDbUsage(t *testing.T) {
-	db, err := sql.Open("mysql", "root:password@tcp(localhost:3306)/test")
+	db, err := sql.Open("mysql", "root:User_123@tcp(localhost:3306)/test")
 	if err != nil {
 		t.Error(err)
 		return
@@ -41,9 +41,9 @@ func TestDbUsage(t *testing.T) {
 
 	ctx := context.Background()
 	SetupLogger(LogLevelDebug, os.Stdout)
-	mapper := RowMapperFunc(func(row Scannable) (interface{}, error) {
+	mapper := RowMapperFunc(func(row DataRow) (interface{}, error) {
 		m := &member{}
-		err = row.Scan(&m.id, &m.name, &m.yearBirth)
+		err = row.Scan(&m.ID, &m.Name, &m.YearBirth)
 		return m, err
 	})
 
@@ -54,7 +54,7 @@ func TestDbUsage(t *testing.T) {
 	}
 
 	m := obj.(*member)
-	fmt.Println(m.id, m.name, m.yearBirth)
+	fmt.Println(m.ID, m.Name, m.YearBirth)
 
 	objs, err := QueryAll(ctx, db, mapper, "select id, name, year_birth from member order by id asc")
 	if err != nil {
@@ -64,7 +64,29 @@ func TestDbUsage(t *testing.T) {
 
 	for _, obj = range objs {
 		m = obj.(*member)
-		fmt.Println(m.id, m.name, m.yearBirth)
+		fmt.Println(m.ID, m.Name, m.YearBirth)
+	}
+
+	objs, err = QueryAll(ctx, db, NewSmartMapper(&member{}), "select id, name, year_birth from member order by id asc")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	for _, obj = range objs {
+		m = obj.(*member)
+		fmt.Println(m.ID, m.Name, m.YearBirth)
+	}
+
+	objs, err = QueryAll(ctx, db, NewSmartMapper(&member{}), "select id, name, year_birth from member order by id asc")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	for _, obj = range objs {
+		m = obj.(*member)
+		fmt.Println(m.ID, m.Name, m.YearBirth)
 	}
 
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted, ReadOnly: false})
@@ -82,6 +104,28 @@ func TestDbUsage(t *testing.T) {
 
 	for _, obj = range objs {
 		m = obj.(*member)
-		fmt.Println(m.id, m.name, m.yearBirth)
+		fmt.Println(m.ID, m.Name, m.YearBirth)
+	}
+
+	obj, err = QueryOne(ctx, tx, NewSmartMapper(0), "select max(id) from member")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if int(lastID) != obj.(int) {
+		t.Error(lastID, obj, "are not matched")
+		return
+	}
+
+	objs, err = QueryAll(ctx, tx, NewSmartMapper(""), "select name from member")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	for _, obj = range objs {
+		s := obj.(string)
+		fmt.Println(s)
 	}
 }
