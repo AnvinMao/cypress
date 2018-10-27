@@ -169,7 +169,8 @@ func (manager *TemplateManager) refreshTemplates() {
 
 			for _, ref := range refs {
 				tmplName := path.Base(ref.files[0])
-				tmpl, err := template.ParseFiles(ref.files...)
+				tmpl := template.New(tmplName).Funcs(manager.funcs)
+				tmpl, err := tmpl.ParseFiles(ref.files...)
 				if err != nil {
 					zap.L().Error("failedToRefreshTemplate", zap.String("template", tmplName), zap.String("file", file), zap.Error(err))
 					continue
