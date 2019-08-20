@@ -18,6 +18,7 @@ type TestObj struct {
 
 func TestInMemorySessionStore(t *testing.T) {
 	sessionStore := NewInMemorySessionStore()
+	defer sessionStore.Close()
 	testSessionStore(sessionStore, t)
 }
 

@@ -16,6 +16,7 @@ type inMemorySessionStore struct {
 	sessions map[string]*sessionItem
 	lock     *sync.RWMutex
 	gcTicker *time.Ticker
+	exitChan chan bool
 }
 
 // NewInMemorySessionStore creates an in memory session store
@@ -24,6 +25,7 @@ func NewInMemorySessionStore() SessionStore {
 		sessions: make(map[string]*sessionItem),
 		lock:     new(sync.RWMutex),
 		gcTicker: time.NewTicker(5 * time.Minute),
+		exitChan: make(chan bool),
 	}
 
 	go func() {
@@ -31,11 +33,21 @@ func NewInMemorySessionStore() SessionStore {
 			select {
 			case <-store.gcTicker.C:
 				store.doGC()
+				break
+			case <-store.exitChan:
+				return
 			}
 		}
 	}()
 
 	return store
+}
+
+// Close closes the session store
+func (store *inMemorySessionStore) Close() {
+	store.exitChan <- true
+	store.gcTicker.Stop()
+	close(store.exitChan)
 }
 
 // Save saves the session into store
@@ -73,16 +85,18 @@ func (store *inMemorySessionStore) Get(id string) (*Session, error) {
 }
 
 func (store *inMemorySessionStore) doGC() {
-	store.lock.RLock()
-	now := time.Now()
 	keysToRemove := make([]string, 0)
-	for key, value := range store.sessions {
-		if value.expiration.Before(now) {
-			keysToRemove = append(keysToRemove, key)
+	func() {
+		store.lock.RLock()
+		defer store.lock.RUnlock()
+		now := time.Now()
+		for key, value := range store.sessions {
+			if value.expiration.Before(now) {
+				keysToRemove = append(keysToRemove, key)
+			}
 		}
-	}
+	}()
 
-	store.lock.RUnlock()
 	store.lock.Lock()
 	defer store.lock.Unlock()
 	for _, key := range keysToRemove {

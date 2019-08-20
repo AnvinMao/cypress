@@ -3,72 +3,20 @@ package cypress
 import (
 	"errors"
 	"reflect"
-	"sync"
 )
 
 var (
 	// ErrPointerRequired a pointer is required
 	ErrPointerRequired = errors.New("a pointer is required")
-
-	// ErrUnknownColumn no field to map the column
-	ErrUnknownColumn = errors.New("don't know how to map the column")
 )
-var fieldNameCache = newNameMappingCache()
-
-type cacheEntry struct {
-	cache map[string]string
-	lock  *sync.RWMutex
-}
-
-type nameMappingCache struct {
-	cache map[string]*cacheEntry
-	lock  *sync.RWMutex
-}
 
 type smartMapper struct {
-	value interface{}
-}
-
-func newNameMappingCache() *nameMappingCache {
-	return &nameMappingCache{make(map[string]*cacheEntry), &sync.RWMutex{}}
-}
-
-func (c *nameMappingCache) getCacheEntry(typeName string) *cacheEntry {
-	c.lock.RLock()
-	entry, ok := c.cache[typeName]
-	c.lock.RUnlock()
-	if !ok {
-		c.lock.Lock()
-		entry, ok = c.cache[typeName]
-		if !ok {
-			entry = &cacheEntry{make(map[string]string), &sync.RWMutex{}}
-			c.cache[typeName] = entry
-		}
-
-		c.lock.Unlock()
-	}
-
-	return entry
-}
-
-func (c *nameMappingCache) get(typeName, columnName string) (string, bool) {
-	entry := c.getCacheEntry(typeName)
-	entry.lock.RLock()
-	defer entry.lock.RUnlock()
-	value, ok := entry.cache[columnName]
-	return value, ok
-}
-
-func (c *nameMappingCache) put(typeName, columnName, fieldName string) {
-	entry := c.getCacheEntry(typeName)
-	entry.lock.Lock()
-	defer entry.lock.Unlock()
-	entry.cache[columnName] = fieldName
+	valueType reflect.Type
 }
 
 // NewSmartMapper creates a smart row mapper for data row
 func NewSmartMapper(value interface{}) RowMapper {
-	return &smartMapper{value}
+	return &smartMapper{reflect.TypeOf(value)}
 }
 
 // Map maps the data row to a value object
@@ -84,7 +32,7 @@ func (mapper *smartMapper) Map(row DataRow) (interface{}, error) {
 	}
 
 	if len(columnTypes) == 1 {
-		t := reflect.TypeOf(mapper.value)
+		t := mapper.valueType
 		if t.Kind() == reflect.Ptr {
 			t = t.Elem()
 		}
@@ -96,46 +44,22 @@ func (mapper *smartMapper) Map(row DataRow) (interface{}, error) {
 		}
 	}
 
-	valueType := reflect.TypeOf(mapper.value)
+	valueType := mapper.valueType
 	if valueType.Kind() != reflect.Ptr {
 		return nil, ErrPointerRequired
 	}
 
 	valueType = valueType.Elem()
-	typeID := valueType.PkgPath() + "/" + valueType.Name()
+	getters := GetFieldValueGetters(valueType)
 	value := reflect.New(valueType)
 	values := make([]interface{}, len(columns))
 
 	for index, name := range columns {
-		fieldName, ok := fieldNameCache.get(typeID, name)
-		if !ok {
-			_, ok := valueType.FieldByName(name)
-			if !ok {
-				for i := 0; i < valueType.NumField(); i = i + 1 {
-					f := valueType.Field(i)
-					if name == f.Tag.Get("col") {
-						fieldName = f.Name
-						break
-					}
-				}
-			} else {
-				fieldName = name
-			}
-
-			if fieldName != "" {
-				fieldNameCache.put(typeID, name, fieldName)
-			}
-		}
-
-		if fieldName == "" {
-			return nil, ErrUnknownColumn
-		}
-
-		fieldValue := value.Elem().FieldByName(fieldName)
-		if fieldValue.Type().Kind() == reflect.Ptr {
-			values[index] = fieldValue.Interface()
+		getter, ok := getters[name]
+		if ok {
+			values[index] = getter.Get(value.Elem()).Addr().Interface()
 		} else {
-			values[index] = fieldValue.Addr().Interface()
+			values[index] = &values[index]
 		}
 	}
 

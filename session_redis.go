@@ -15,6 +15,11 @@ func NewRedisSessionStore(cli *redis.Client) SessionStore {
 	return &redisSessionStore{cli}
 }
 
+// Close closes the store
+func (store *redisSessionStore) Close() {
+	store.redisDb.Close()
+}
+
 // Save implements SessionStore's Save api, store the session data into redis
 func (store *redisSessionStore) Save(session *Session, timeout time.Duration) error {
 	if !session.IsValid {
