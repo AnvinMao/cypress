@@ -25,6 +25,7 @@ var (
 type fileSessionStore struct {
 	path     string
 	gcTicker *time.Ticker
+	exitChan chan bool
 }
 
 type fileSessionItem struct {
@@ -46,6 +47,7 @@ func NewFileSessionStore(directory string) (SessionStore, error) {
 	store := &fileSessionStore{
 		path:     directory,
 		gcTicker: time.NewTicker(time.Minute * 5),
+		exitChan: make(chan bool),
 	}
 
 	gob.Register(fileSessionItem{})
@@ -54,11 +56,21 @@ func NewFileSessionStore(directory string) (SessionStore, error) {
 			select {
 			case <-store.gcTicker.C:
 				store.doGC()
+				break
+			case <-store.exitChan:
+				return
 			}
 		}
 	}()
 
 	return store, nil
+}
+
+// Close close the session store
+func (store *fileSessionStore) Close() {
+	store.exitChan <- true
+	store.gcTicker.Stop()
+	close(store.exitChan)
 }
 
 // Save saves the session to the file system

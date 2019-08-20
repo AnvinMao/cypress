@@ -141,6 +141,10 @@ type SessionStore interface {
 	// if the session is still valid, otherwise, (nil, ErrSessionNotFound)
 	// will be returned
 	Get(id string) (*Session, error)
+
+	// Close closes the session store and release the resources that
+	// the session store owns
+	Close()
 }
 
 type sessionHandler struct {
@@ -156,7 +160,9 @@ func (handler *sessionHandler) ServeHTTP(writer http.ResponseWriter, request *ht
 	if err == nil {
 		session, err = handler.store.Get(cookie.Value)
 		if err != nil && err != ErrSessionNotFound {
-			zap.L().Error("Not able to get session from session store", zap.Error(err))
+			zap.L().Error("Not able to get session from session store", zap.Error(err), zap.String("activityId", GetTraceID(request.Context())))
+			SendError(writer, http.StatusInternalServerError, "Session store failure")
+			return
 		}
 	}
 
@@ -166,7 +172,7 @@ func (handler *sessionHandler) ServeHTTP(writer http.ResponseWriter, request *ht
 			Name:   sessionIDCookieKey,
 			Value:  session.ID,
 			MaxAge: 60 * 60 * 24, // for one day
-			Path: 	"/",
+			Path:   "/",
 		}
 
 		http.SetCookie(writer, cookie)
@@ -177,7 +183,7 @@ func (handler *sessionHandler) ServeHTTP(writer http.ResponseWriter, request *ht
 		if session.NeedSave() {
 			saveError := handler.store.Save(session, handler.timeout)
 			if saveError != nil {
-				zap.L().Error("Not able to save the session", zap.Error(err))
+				zap.L().Error("Not able to save the session", zap.Error(err), zap.String("activityId", GetTraceID(request.Context())))
 			}
 		}
 	}()

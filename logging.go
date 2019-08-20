@@ -123,13 +123,14 @@ func LoggingHandler(handler http.Handler) http.Handler {
 		defer func() {
 			if err := recover(); err != nil {
 				defer zap.L().Sync()
+				// Log and continue, the user code has to ensure all locks will be unlocked
+				// in case of panic
 				zap.L().Error(fmt.Sprint(err),
 					zap.String("requestUri", request.URL.String()),
 					zap.String("path", request.URL.Path),
 					zap.String("requestMethod", request.Method),
-					zap.Stack("source"))
-				writer.WriteHeader(http.StatusInternalServerError)
-				writer.Write([]byte("<h1>Unknown error, please contact administrator</h1>"))
+					zap.Stack("source"),
+					zap.String("activityId", GetTraceID(request.Context())))
 			}
 		}()
 
@@ -171,7 +172,7 @@ func LoggingHandler(handler http.Handler) http.Handler {
 			userProvider = userPrincipal.Provider
 		}
 
-		zap.L().Info(fmt.Sprintf("request %s served", newRequest.URL),
+		zap.L().Info("requestServed",
 			zap.String("type", "apiCall"),
 			zap.String("correlationId", correlationID),
 			zap.String("activityId", activityID),

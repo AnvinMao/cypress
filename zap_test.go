@@ -1,32 +1,36 @@
 package cypress
 
 import (
-	"os"
+	"encoding/json"
 	"testing"
 
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 func TestZapLogger(t *testing.T) {
-	config := zap.NewProductionConfig()
-	config.OutputPaths = []string{
-		"stdout",
-	}
-
-	logger, err := config.Build()
-	if err != nil {
-		t.Error(err)
+	writer := NewBufferWriter()
+	SetupLogger(LogLevelWarn, writer)
+	zap.L().Info("test1")
+	zap.L().Error("test2", zap.String("field1", "value1"))
+	if len(writer.Buffer) != 1 {
+		t.Error("only one log entry expected but got", len(writer.Buffer))
 		return
 	}
 
-	defer logger.Sync()
-	logger.Info("test message", zap.String("field", "value"), zap.Stack("callstack"))
+	type log struct {
+		Message       string `json:"msg"`
+		AdditionField string `json:"field1"`
+	}
 
-	jsonEncoder := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
-	writeSyncer := zapcore.AddSync(os.Stdout)
-	zapCore := zapcore.NewCore(jsonEncoder, writeSyncer, zapcore.DebugLevel)
-	l := zap.New(zapCore)
-	defer l.Sync()
-	l.Info("test message1", zap.String("field", "value2"))
+	l := log{}
+	err := json.Unmarshal(writer.Buffer[0], &l)
+	if err != nil {
+		t.Error("bad log entry", err)
+		return
+	}
+
+	if l.Message != "test2" || l.AdditionField != "value1" {
+		t.Error("unexpected log entry", string(writer.Buffer[0]))
+		return
+	}
 }

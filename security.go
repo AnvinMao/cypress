@@ -138,8 +138,7 @@ func (handler *SecurityHandler) ServeHTTP(writer http.ResponseWriter, request *h
 		handler.pipeline.ServeHTTP(writer, request)
 	} else {
 		if handler.loginURL == "" {
-			writer.WriteHeader(http.StatusForbidden)
-			writer.Write([]byte("Access denied"))
+			SendError(writer, http.StatusForbidden, "Access denied")
 		} else {
 			http.Redirect(writer, request, handler.loginURL, http.StatusTemporaryRedirect)
 		}
