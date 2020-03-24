@@ -10,6 +10,7 @@ import (
 
 // WebSocketSession a connected web socket session
 type WebSocketSession struct {
+	RemoteAddr   string
 	User         *UserPrincipal
 	Session      *Session
 	Context      map[string]interface{}
@@ -53,6 +54,12 @@ type WebSocketListener interface {
 
 	// OnClose when the channel is broken or closed by remote
 	OnClose(session *WebSocketSession, reason int)
+}
+
+// PingMessageHandler websocket ping message handler, provide API to handle websocket ping messages
+type PingMessageHandler interface {
+	// OnPingMessage when a ping message is received, no need to send back pong message, which is done automatically
+	OnPingMessage(session *WebSocketSession)
 }
 
 var upgrader = websocket.Upgrader{}
@@ -111,7 +118,7 @@ func (handler *WebSocketHandler) Handle(writer http.ResponseWriter, request *htt
 		conn.EnableWriteCompression(true)
 	}
 
-	webSocketSession := &WebSocketSession{userPrincipal, session, make(map[string]interface{}), conn, handler.WriteTimeout}
+	webSocketSession := &WebSocketSession{request.RemoteAddr, userPrincipal, session, make(map[string]interface{}), conn, handler.WriteTimeout}
 	handler.Listener.OnConnect(webSocketSession)
 	go handler.connectionLoop(webSocketSession)
 }
@@ -124,7 +131,7 @@ func (handler *WebSocketHandler) connectionLoop(session *WebSocketSession) {
 
 		msgType, data, err := session.connection.ReadMessage()
 		if err != nil {
-			zap.L().Error("failed to read from ws peer", zap.Error(err))
+			zap.L().Error("failed to read from ws peer", zap.Error(err), zap.String("remoteAddr", session.RemoteAddr))
 			handler.Listener.OnClose(session, websocket.CloseAbnormalClosure)
 			session.connection.Close()
 			return
@@ -141,8 +148,18 @@ func (handler *WebSocketHandler) connectionLoop(session *WebSocketSession) {
 			handler.Listener.OnClose(session, websocket.CloseNormalClosure)
 			session.connection.Close()
 			return
+		case websocket.PingMessage:
+			h, ok := handler.Listener.(PingMessageHandler)
+			if ok {
+				h.OnPingMessage(session)
+			}
+
+			err = session.connection.WriteMessage(websocket.PongMessage, data)
+			if err != nil {
+				zap.L().Error("not able to write back pong message", zap.String("remoteAddr", session.RemoteAddr))
+			}
 		default:
-			zap.L().Error("not able to handle message type", zap.Int("messageType", msgType))
+			zap.L().Error("not able to handle message type", zap.Int("messageType", msgType), zap.String("remoteAddr", session.RemoteAddr))
 			break
 		}
 	}
