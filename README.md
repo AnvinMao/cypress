@@ -1,4 +1,5 @@
 # cypress
+*deprecated, please use byteway/cypress instead*
 An integrated web server and websocket framework
 
 ## features
